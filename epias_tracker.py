@@ -2,13 +2,11 @@ import os
 import smtplib
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
-from datetime import datetime, timedelta
+from datetime import datetime
 import requests
 
 def fetch_epias_ptf():
     target_date = datetime.now().strftime('%Y-%m-%d')
-    
-    # EPİAŞ Gün Öncesi Piyasası - Piyasa Takas Fiyatı (PTF) API Endpoint'i
     url = f"https://seffaflik.epias.com.tr/transparency/service/market-clearing-price/ptf?startDate={target_date}&endDate={target_date}"
     
     hourly_data = []
@@ -60,7 +58,7 @@ def send_email(target_date, data, source_name):
     receiver_email = "selcuk.bahadir.61@gmail.com"
 
     msg = MIMEMultipart("alternative")
-    msg["Subject"] = f"⚡ EPİAŞ Raporu [{source_name}] - {target_date}"
+    msg["Subject"] = f"EPİAŞ Raporu [{source_name}] - {target_date}"
     msg["From"] = sender_email
     msg["To"] = receiver_email
 
@@ -68,7 +66,7 @@ def send_email(target_date, data, source_name):
         html_body = f"<h3>{target_date} için {source_name} verisi henüz listelenemedi.</h3>"
     else:
         html_body = f"<div style='font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;'>"
-        html_body += f"<h2 style='color: #1a73e8;'>📊 {target_date} Tarihli Rapor</h2>"
+        html_body += f"<h2 style='color: #1a73e8;'>{target_date} Tarihli Rapor</h2>"
         html_body += f"<p><b>Veri Kaynağı / Piyasası:</b> <span style='color: #d93025;'>{source_name}</span></p>"
         html_body += "<table border='1' cellpadding='8' cellspacing='0' style='border-collapse: collapse; width: 100%; text-align: left;'>"
         html_body += "<tr style='background-color: #f2f2f2; color: #333;'><th>Saat Dilimi</th><th>PTF (TL / MWh)</th></tr>"
@@ -91,4 +89,4 @@ def send_email(target_date, data, source_name):
 
 if __name__ == "__main__":
     date, data, source = fetch_epias_ptf()
-    send_email(date,
+    send_email(date, data, source)
