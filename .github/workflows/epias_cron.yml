@@ -1,0 +1,30 @@
+name: EPİAŞ Günlük PTF Raporu
+
+on:
+  schedule:
+    # Her gün Türkiye saati ile 17:05'te çalışır (UTC 14:05)
+    - cron: '05 14 * * *'
+  workflow_dispatch:
+
+jobs:
+  run-tracker:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Kodları Çek
+        uses: actions/checkout@v3
+
+      - name: Python Kurulumu
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Bağımlılıkları Yükle
+        run: |
+          pip install requests
+
+      - name: Betiği Çalıştır
+        env:
+          MAIL_USER: ${{ secrets.MAIL_USER }}
+          MAIL_PASS: ${{ secrets.MAIL_PASS }}
+        run: |
+          python epias_tracker.py
