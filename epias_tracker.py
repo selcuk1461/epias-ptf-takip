@@ -6,10 +6,14 @@ from datetime import datetime, timedelta
 import requests
 
 def fetch_epias_ptf():
-    target_date = (datetime.now() + timedelta(days=1)).strftime('%Y-%m-%d')
+    target_date = datetime.now().strftime('%Y-%m-%d')
+    
+    # EPİAŞ Gün Öncesi Piyasası - Piyasa Takas Fiyatı (PTF) API Endpoint'i
     url = f"https://seffaflik.epias.com.tr/transparency/service/market-clearing-price/ptf?startDate={target_date}&endDate={target_date}"
     
     hourly_data = []
+    data_source_name = "Gün Öncesi Piyasası - Piyasa Takas Fiyatı (PTF)"
+    
     try:
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
@@ -19,24 +23,27 @@ def fetch_epias_ptf():
         
         if response.status_code == 200:
             result = response.json()
+            
             items = []
-            if "body" in result and isinstance(result["body"], list):
-                items = result["body"]
-            elif "items" in result and isinstance(result["items"], list):
-                items = result["items"]
-            elif isinstance(result, list):
+            if isinstance(result, list):
                 items = result
-                
+            elif "body" in result:
+                body = result["body"]
+                if isinstance(body, list):
+                    items = body
+                elif isinstance(body, dict):
+                    items = body.get("items", []) or body.get("entofMcpList", [])
+            elif "items" in result:
+                items = result["items"]
+
             for item in items:
-                date_time = item.get("date", "")
-                price = item.get("ptf", 0.0)
-                if price == 0.0:
-                    price = item.get("price", 0.0)
+                date_time = item.get("date", "") or item.get("dateTime", "")
+                price = item.get("ptf", 0.0) or item.get("price", 0.0) or item.get("congestedPtf", 0.0)
                 
                 if "T" in str(date_time):
                     hour_str = str(date_time).split("T")[1][:5]
                 else:
-                    hour_str = "00:00"
+                    hour_str = str(date_time)[-8: -3] if len(str(date_time)) >= 8 else "00:00"
                     
                 hourly_data.append({
                     "hour": hour_str,
@@ -45,47 +52,31 @@ def fetch_epias_ptf():
     except Exception as e:
         print(f"API Bağlantı Hatası: {e}")
 
-    if not hourly_data:
-        today_date = datetime.now().strftime('%Y-%m-%d')
-        url_today = f"https://seffaflik.epias.com.tr/transparency/service/market-clearing-price/ptf?startDate={today_date}&endDate={today_date}"
-        try:
-            response = requests.get(url_today, headers={"User-Agent": "Mozilla/5.0"}, timeout=15)
-            if response.status_code == 200:
-                result = response.json()
-                items = result.get("body", []) or result.get("items", [])
-                for item in items:
-                    date_time = item.get("date", "")
-                    price = item.get("ptf", 0.0) or item.get("price", 0.0)
-                    hour_str = str(date_time).split("T")[1][:5] if "T" in str(date_time) else "00:00"
-                    hourly_data.append({
-                        "hour": hour_str,
-                        "price": float(price)
-                    })
-                target_date = f"{today_date} (Bugün)"
-        except Exception:
-            pass
+    return target_date, hourly_data, data_source_name
 
-    return target_date, hourly_data
-
-def send_email(target_date, data):
+def send_email(target_date, data, source_name):
     sender_email = os.environ.get("MAIL_USER")
     sender_password = os.environ.get("MAIL_PASS")
     receiver_email = "selcuk.bahadir.61@gmail.com"
 
     msg = MIMEMultipart("alternative")
-    msg["Subject"] = "EPİAS GÖP PTF Raporu - " + str(target_date)
+    msg["Subject"] = f"⚡ EPİAŞ Raporu [{source_name}] - {target_date}"
     msg["From"] = sender_email
     msg["To"] = receiver_email
 
     if not data:
-        html_body = "<h3>" + str(target_date) + " için EPİAŞ'tan henüz veri yayınlanmamış.</h3>"
+        html_body = f"<h3>{target_date} için {source_name} verisi henüz listelenemedi.</h3>"
     else:
-        html_body = "<h2>" + str(target_date) + " Tarihli Gerçek PTF Raporu</h2>"
-        html_body += "<table border='1' cellpadding='8' cellspacing='0' style='border-collapse: collapse; width: 100%;'>"
-        html_body += "<tr style='background-color: #f2f2f2;'><th>Saat</th><th>PTF (TL/MWh)</th></tr>"
+        html_body = f"<div style='font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;'>"
+        html_body += f"<h2 style='color: #1a73e8;'>📊 {target_date} Tarihli Rapor</h2>"
+        html_body += f"<p><b>Veri Kaynağı / Piyasası:</b> <span style='color: #d93025;'>{source_name}</span></p>"
+        html_body += "<table border='1' cellpadding='8' cellspacing='0' style='border-collapse: collapse; width: 100%; text-align: left;'>"
+        html_body += "<tr style='background-color: #f2f2f2; color: #333;'><th>Saat Dilimi</th><th>PTF (TL / MWh)</th></tr>"
         for row in data:
-            html_body += "<tr><td><b>" + str(row['hour']) + "</b></td><td>" + f"{row['price']:,.2f}" + " TL</td></tr>"
+            html_body += f"<tr><td><b>{str(row['hour'])}</b></td><td>{row['price']:,.2f} TL</td></tr>"
         html_body += "</table>"
+        html_body += "<p style='font-size: 12px; color: #666; margin-top: 20px;'>Bu rapor GitHub Actions üzerinden otomatik olarak gönderilmiştir.</p>"
+        html_body += "</div>"
 
     msg.attach(MIMEText(html_body, "html"))
 
@@ -99,5 +90,5 @@ def send_email(target_date, data):
         print(f"E-posta gönderilemedi: {e}")
 
 if __name__ == "__main__":
-    date, data = fetch_epias_ptf()
-    send_email(date, data)
+    date, data, source = fetch_epias_ptf()
+    send_email(date,
