@@ -8,7 +8,6 @@ import requests
 def fetch_epias_ptf():
     target_date = datetime.now().strftime('%Y-%m-%d')
     
-    # EPİAŞ'ın güncel Kesinleşmemiş PTF (Interim MCP) servisi POST isteği ve JSON body kullanır
     url = "https://seffaflik.epias.com.tr/transparency/service/market-clearing-price/interim-mcp"
     payload = {
         "startDate": target_date,
@@ -22,10 +21,14 @@ def fetch_epias_ptf():
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
             "Content-Type": "application/json",
-            "Accept": "application/json"
+            "Accept": "application/json, text/plain, */*",
+            "Origin": "https://seffaflik.epias.com.tr",
+            "Referer": "https://seffaflik.epias.com.tr/electricity/electricity-markets/day-ahead-market-dam/interim-market-clearing-price-i-mcp"
         }
-        # requests.get yerine requests.POST kullanıyoruz
+        
         response = requests.post(url, json=payload, headers=headers, timeout=15)
+        print(f"HTTP Durum Kodu: {response.status_code}")
+        print(f"EPİAŞ Ham Yanıtı: {response.text[:500]}") # İlk 500 karakteri loglara yazdırır
         
         if response.status_code == 200:
             result = response.json()
@@ -73,7 +76,7 @@ def send_email(target_date, data, source_name):
     msg["To"] = receiver_email
 
     if not data:
-        html_body = f"<h3>{target_date} için {source_name} verisi henüz yayınlanmamış.</h3>"
+        html_body = f"<h3>{target_date} için {source_name} verisi alınamadı.</h3>"
     else:
         html_body = f"<div style='font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;'>"
         html_body += f"<h2 style='color: #1a73e8;'>📊 {target_date} Tarihli Rapor</h2>"
@@ -83,7 +86,6 @@ def send_email(target_date, data, source_name):
         for row in data:
             html_body += f"<tr><td><b>{str(row['hour'])}</b></td><td>{row['price']:,.2f} TL</td></tr>"
         html_body += "</table>"
-        html_body += "<p style='font-size: 12px; color: #666; margin-top: 20px;'>Bu rapor GitHub Actions üzerinden otomatik olarak gönderilmiştir.</p>"
         html_body += "</div>"
 
     msg.attach(MIMEText(html_body, "html"))
