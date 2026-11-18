@@ -1,0 +1,124 @@
+name: OSOS Baglanti Testi
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  connection:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+
+    steps:
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      - name: OSOS token ve tesisat listesi
+        env:
+          OSOS_USERNAME: ${{ secrets.OSOS_USERNAME }}
+          OSOS_PASSWORD: ${{ secrets.OSOS_PASSWORD }}
+        run: |
+          python - <<'PY'
+          import os
+          import json
+          import urllib.request
+          import urllib.parse
+          import urllib.error
+
+          BASE = "https://mdmsaatlik.baskentedas.com.tr/baskent/mdm-api"
+
+          username = os.environ.get("OSOS_USERNAME", "").strip()
+          password = os.environ.get("OSOS_PASSWORD", "")
+
+          if not username or not password:
+              raise SystemExit("OSOS_USERNAME veya OSOS_PASSWORD secret eksik.")
+
+          def fetch(request, label):
+              try:
+                  with urllib.request.urlopen(request, timeout=40) as response:
+                      body = response.read()
+                      print(f"{label}: HTTP {response.status}", flush=True)
+              except urllib.error.HTTPError as error:
+                  raise SystemExit(
+                      f"{label}: HTTP {error.code}. "
+                      "Kimlik bilgileri, servis yetkisi veya IP izni kontrol edilmeli."
+                  ) from None
+              except (urllib.error.URLError, TimeoutError):
+                  raise SystemExit(
+                      f"{label}: Baglanti kurulamadi. "
+                      "Ag erisimi ve IP izin listesi kontrol edilmeli."
+                  ) from None
+
+              try:
+                  return json.loads(body)
+              except (ValueError, UnicodeDecodeError):
+                  raise SystemExit(
+                      f"{label}: Beklenen JSON yaniti gelmedi."
+                  ) from None
+
+          params = urllib.parse.urlencode({
+              "grant_type": "client_credentials",
+              "client_id": username,
+              "client_secret": password,
+              "consumerID": "MDMAYPRD",
+          })
+
+          print("Token isteniyor...", flush=True)
+          token_response = fetch(
+              urllib.request.Request(
+                  BASE + "/oauth/token?" + params,
+                  data=b"",
+                  headers={"Accept": "application/json"},
+                  method="POST",
+              ),
+              "Token servisi",
+          )
+
+          token = (
+              token_response.get("access_token")
+              if isinstance(token_response, dict)
+              else None
+          )
+          if not isinstance(token, str) or not token:
+              raise SystemExit("Yanit icinde access_token bulunamadi.")
+
+          print("Token alindi; gizli tutuluyor.", flush=True)
+
+          query = urllib.parse.urlencode({
+              "access_token": token,
+              "consumerID": "MDMAYPRD",
+          })
+
+          result = fetch(
+              urllib.request.Request(
+                  BASE + "/customer/installation-list?" + query,
+                  headers={
+                      "Accept": "application/json",
+                      "consumerID": "MDM",
+                  },
+                  method="GET",
+              ),
+              "Tesisat listeleme",
+          )
+
+          # Tesisat numaralari ve kisisel bilgiler loga yazilmaz.
+          if isinstance(result, dict):
+              print("Yanit alanlari:", ", ".join(result.keys()))
+              for key, value in result.items():
+                  if isinstance(value, list):
+                      print(f"{key}: {len(value)} kayit")
+                  elif key.lower() in ("status", "message_type"):
+                      if isinstance(value, (int, bool)):
+                          print(f"{key}: {value}")
+                      elif isinstance(value, str) and value.isdigit():
+                          print(f"{key}: {value}")
+          elif isinstance(result, list):
+              print(f"Tesisat yaniti: {len(result)} kayit")
+          else:
+              raise SystemExit("Beklenmeyen yanit yapisi.")
+
+          print("Baglanti denemesi tamamlandi.")
+          PY
